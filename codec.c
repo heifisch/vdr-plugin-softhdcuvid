@@ -163,7 +163,7 @@ static int Codec_get_buffer2(AVCodecContext *video_ctx, AVFrame *frame, int flag
     }
 #if 0
     if (decoder->hwaccel_get_buffer && (AV_PIX_FMT_VDPAU == decoder->hwaccel_pix_fmt
-	    || AV_PIX_FMT_CUDA == decoder->hwaccel_pix_fmt || AV_PIX_FMT_VAAPI == decoder->hwaccel_pix_fmt)) {
+	    || AV_PIX_FMT_CUDA == decoder->hwaccel_pix_fmt )) {
 	// Debug(3,"hwaccel get_buffer\n");
 	return decoder->hwaccel_get_buffer(video_ctx, frame, flags);
     }
@@ -269,42 +269,6 @@ void CodecVideoOpen(VideoDecoder *decoder, int codec_id) {
 
     pthread_mutex_lock(&CodecLockMutex);
     // open codec
-
-
-#if defined VAAPI
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59,8,100)
-    // decoder->VideoCtx->extra_hw_frames = 8; // VIDEO_SURFACES_MAX +1
-    if (video_codec->capabilities & (AV_CODEC_CAP_AUTO_THREADS)) {
-        Debug(3, "codec: auto threads enabled");
-        //	  decoder->VideoCtx->thread_count = 0;
-    }
-
-    if (video_codec->capabilities & AV_CODEC_CAP_TRUNCATED) {
-        Debug(3, "codec: supports truncated packets");
-        // decoder->VideoCtx->flags |= CODEC_FLAG_TRUNCATED;
-    }
-#endif
-    // FIXME: own memory management for video frames.
-    if (video_codec->capabilities & AV_CODEC_CAP_DR1) {
-        Debug(3, "codec: can use own buffer management");
-    }
-    if (video_codec->capabilities & AV_CODEC_CAP_FRAME_THREADS) {
-        Debug(3, "codec: supports frame threads");
-        //	  decoder->VideoCtx->thread_count = 0;
-        //   decoder->VideoCtx->thread_type |= FF_THREAD_FRAME;
-    }
-    if (video_codec->capabilities & AV_CODEC_CAP_SLICE_THREADS) {
-        Debug(3, "codec: supports slice threads");
-        //	  decoder->VideoCtx->thread_count = 0;
-        //   decoder->VideoCtx->thread_type |= FF_THREAD_SLICE;
-    }
-    //    if (av_opt_set_int(decoder->VideoCtx, "refcounted_frames", 1, 0) < 0)
-    //	  Fatal(_("VAAPI Refcounts invalid\n"));
-#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(59,8,100)
-    decoder->VideoCtx->thread_safe_callbacks = 0;
-#endif
-
-#endif
 
 #ifdef CUVID
     int deint = 2;
@@ -453,66 +417,9 @@ void DisplayPts(AVCodecContext * video_ctx, AVFrame * frame)
 */
 extern int CuvidTestSurfaces();
 
-#if defined YADIF || defined(VAAPI)
+#if defined YADIF
 extern int init_filters(AVCodecContext *dec_ctx, void *decoder, AVFrame *frame);
 extern int push_filters(AVCodecContext *dec_ctx, void *decoder, AVFrame *frame);
-#endif
-
-#ifdef VAAPI
-void CodecVideoDecode(VideoDecoder *decoder, const AVPacket *avpkt) {
-    AVCodecContext *video_ctx = decoder->VideoCtx;
-
-    if (video_ctx->codec_type == AVMEDIA_TYPE_VIDEO && CuvidTestSurfaces()) {
-        int ret;
-        AVPacket pkt[1];
-        AVFrame *frame;
-
-        *pkt = *avpkt; // use copy
-        ret = avcodec_send_packet(video_ctx, pkt);
-        //printf("send packet %x\n",ret);
-        if (ret < 0) {
-            return;
-        }
-
-        if (!CuvidTestSurfaces())
-            usleep(1000);
-
-        ret = 0;
-        while (ret >= 0 && CuvidTestSurfaces()) {
-            frame = av_frame_alloc();
-            ret = avcodec_receive_frame(video_ctx, frame);
-
-            if (ret < 0 && ret != AVERROR(EAGAIN) && ret != AVERROR_EOF) {
-                Debug(4, "codec: receiving video frame failed");
-                av_frame_free(&frame);
-                return;
-            }
-            if (ret >= 0) {
-                //printf("Videosize %d:%d interlaced %d Flag %x\n",frame->width,frame->height,frame->interlaced_frame,frame->flags & AV_FRAME_FLAG_INTERLACED);
-                if (((frame->flags & AV_FRAME_FLAG_INTERLACED) || (frame->height == 576)) && decoder->filter) {
-                //if ( decoder->filter) {
-                    if (decoder->filter == 1) {
-                        if (init_filters(video_ctx, decoder->HwDecoder, frame) < 0) {
-                            Debug(3, "video: Init of VAAPI deint Filter failed\n");
-                            decoder->filter = 0;
-                        } else {
-                            Debug(3, "Init VAAPI deint ok\n");
-                            decoder->filter = 2;
-                        }
-                    }
-                    if (decoder->filter == 2) { 
-                        push_filters(video_ctx, decoder->HwDecoder, frame);
-                        continue;
-                    }
-                }
-                VideoRenderFrame(decoder->HwDecoder, video_ctx, frame);
-            } else {
-                av_frame_free(&frame);
-                return;
-            }
-        }
-    }
-}
 #endif
 
 #ifdef CUVID

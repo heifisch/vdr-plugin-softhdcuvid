@@ -70,7 +70,7 @@ static void DumpMpeg(const uint8_t *data, int size);
 //////////////////////////////////////////////////////////////////////////////
 
 extern int ConfigAudioBufferTime;        ///< config size ms of audio buffer
-extern int ConfigVideoClearOnSwitch;     //<  clear decoder on channel switch
+extern char ConfigVideoClearOnSwitch;     //<  clear decoder on channel switch
 char ConfigStartX11Server;               ///< flag start the x11 server
 static signed char ConfigStartSuspended; ///< flag to start in suspend mode
 static char ConfigFullscreen;            ///< fullscreen modus
@@ -1466,241 +1466,6 @@ static void VideoNextPacket(VideoStream *stream, int codec_id) {
     VideoResetPacket(stream);
 }
 
-#if defined(USE_PIP) || defined(VAAPI)
-
-/**
-**  Place mpeg video data in packet ringbuffer.
-**
-**  Some tv-stations sends mulitple pictures in a single PES packet.
-**  Split the packet into single picture packets.
-**  Nick/CC, Viva, MediaShop, Deutsches Music Fernsehen
-**
-**  FIXME: this code can be written much faster
-**
-**  @param stream   video stream
-**  @param pts	presentation timestamp of pes packet
-**  @param data data of pes packet
-**  @param size size of pes packet
-*/
-static void VideoMpegEnqueue(VideoStream *stream, int64_t pts, int64_t dts, const uint8_t *data, int size) {
-    static const char startcode[3] = {0x00, 0x00, 0x01};
-    const uint8_t *p;
-    int n;
-    int first;
-
-    // first scan
-    first = !stream->PacketRb[stream->PacketWrite].stream_index;
-    p = data;
-    n = size;
-
-#ifdef DEBUG
-    if (n < 4) {
-        // is a problem with the pes start code detection
-        Error(_("[softhddev] too short PES video packet\n"));
-        fprintf(stderr, "[softhddev] too short PES video packet\n");
-    }
-#endif
-
-    switch (stream->StartCodeState) { // prefix starting in last packet
-        case 3:                       // 0x00 0x00 0x01 seen
-#ifdef DEBUG
-            fprintf(stderr, "last: %d\n", stream->StartCodeState);
-#endif
-            if (!p[0] || p[0] == 0xb3) {
-#ifdef DEBUG
-                printf("last: %d start	aspect %02x\n", stream->StartCodeState, p[4]);
-#endif
-                stream->PacketRb[stream->PacketWrite].stream_index -= 3;
-                VideoNextPacket(stream, AV_CODEC_ID_MPEG2VIDEO);
-                VideoEnqueue(stream, pts, dts, startcode, 3);
-                first = p[0] == 0xb3;
-                p++;
-                n--;
-                pts = AV_NOPTS_VALUE;
-            }
-
-            break;
-        case 2: // 0x00 0x00 seen
-#ifdef DEBUG
-            fprintf(stderr, "last: %d\n", stream->StartCodeState);
-#endif
-            if (p[0] == 0x01 && (!p[1] || p[1] == 0xb3)) {
-#ifdef DEBUG
-                printf("last: %d start	aspect %02x\n", stream->StartCodeState, p[5]);
-#endif
-                stream->PacketRb[stream->PacketWrite].stream_index -= 2;
-                VideoNextPacket(stream, AV_CODEC_ID_MPEG2VIDEO);
-                VideoEnqueue(stream, pts, dts, startcode, 2);
-                first = p[1] == 0xb3;
-                p += 2;
-                n -= 2;
-                pts = AV_NOPTS_VALUE;
-            }
-            break;
-        case 1: // 0x00 seen
-#ifdef DEBUG
-            fprintf(stderr, "last: %d\n", stream->StartCodeState);
-#endif
-            if (!p[0] && p[1] == 0x01 && (!p[2] || p[2] == 0xb3)) {
-#ifdef DEBUG
-                printf("last: %d start	aspect %02x\n", stream->StartCodeState, p[6]);
-#endif
-                stream->PacketRb[stream->PacketWrite].stream_index -= 1;
-                VideoNextPacket(stream, AV_CODEC_ID_MPEG2VIDEO);
-                VideoEnqueue(stream, pts, dts, startcode, 1);
-                first = p[2] == 0xb3;
-                p += 3;
-                n -= 3;
-                pts = AV_NOPTS_VALUE;
-            }
-        case 0:
-            break;
-    }
-
-    // b3 b4 b8 00 b5 ... 00 b5 ...
-
-    while (n > 3) {
-        if (0 && !p[0] && !p[1] && p[2] == 0x01) {
-            fprintf(stderr, " %02x", p[3]);
-        }
-        // scan for picture header 0x00000100
-        // FIXME: not perfect, must split at 0xb3 also
-        if (!p[0] && !p[1] && p[2] == 0x01 && !p[3]) {
-            if (first) {
-                first = 0;
-                n -= 4;
-                p += 4;
-                continue;
-            }
-            // packet has already an picture header
-            /*
-               fprintf(stderr, "\nfix:%9d,%02x%02x%02x %02x ", n,
-               p[0], p[1], p[2], p[3]);
-             */
-            // first packet goes only upto picture header
-            VideoEnqueue(stream, pts, dts, data, p - data);
-            VideoNextPacket(stream, AV_CODEC_ID_MPEG2VIDEO);
-#ifdef DEBUG
-            fprintf(stderr, "fix\r");
-#endif
-            data = p;
-            size = n;
-
-            // time-stamp only valid for first packet
-            pts = AV_NOPTS_VALUE;
-            n -= 4;
-            p += 4;
-            continue;
-        }
-        if (!p[0] && !p[1] && p[2] == 0x01 && p[3] == 0xb3) {
-            // printf("aspectratio %02x\n",p[7]>>4);
-        }
-        --n;
-        ++p;
-    }
-
-    stream->StartCodeState = 0;
-    switch (n) { // handle packet border start code
-        case 3:
-            if (!p[0] && !p[1] && p[2] == 0x01) {
-                stream->StartCodeState = 3;
-            }
-            break;
-        case 2:
-            if (!p[0] && !p[1]) {
-                stream->StartCodeState = 2;
-            }
-            break;
-        case 1:
-            if (!p[0]) {
-                stream->StartCodeState = 1;
-            }
-            break;
-        case 0:
-            break;
-    }
-    VideoEnqueue(stream, pts, dts, data, size);
-}
-
-#endif
-
-/**
-**  Fix packet for FFMpeg.
-**
-**  Some tv-stations sends mulitple pictures in a single PES packet.
-**  Current ffmpeg 0.10 and libav-0.8 has problems with this.
-**  Split the packet into single picture packets.
-**
-**  FIXME: there are stations which have multiple pictures and
-**  the last picture incomplete in the PES packet.
-**
-**  FIXME: move function call into PlayVideo, than the hardware
-**  decoder didn't need to support multiple frames decoding.
-**
-**  @param avpkt    ffmpeg a/v packet
-*/
-
-#if !defined USE_PIP &&  !defined VAAPI
-static void FixPacketForFFMpeg(VideoDecoder *vdecoder, AVPacket *avpkt) {
-    uint8_t *p;
-    int n;
-    AVPacket tmp[1];
-    int first;
-
-    p = avpkt->data;
-    n = avpkt->size;
-    *tmp = *avpkt;
-
-    first = 1;
-#if STILL_DEBUG > 1
-    if (InStillPicture) {
-        fprintf(stderr, "fix(%d): ", n);
-    }
-#endif
-
-    while (n > 3) {
-#if STILL_DEBUG > 1
-        if (InStillPicture && !p[0] && !p[1] && p[2] == 0x01) {
-            fprintf(stderr, " %02x", p[3]);
-        }
-#endif
-        // scan for picture header 0x00000100
-        if (!p[0] && !p[1] && p[2] == 0x01 && !p[3]) {
-            if (first) {
-                first = 0;
-                n -= 4;
-                p += 4;
-                continue;
-            }
-            // packet has already an picture header
-            tmp->size = p - tmp->data;
-#if STILL_DEBUG > 1
-            if (InStillPicture) {
-                fprintf(stderr, "\nfix:%9d,%02x %02x %02x %02x\n", tmp->size, tmp->data[0], tmp->data[1], tmp->data[2],
-                        tmp->data[3]);
-            }
-#endif
-            CodecVideoDecode(vdecoder, tmp);
-            // time-stamp only valid for first packet
-            tmp->pts = AV_NOPTS_VALUE;
-            tmp->dts = AV_NOPTS_VALUE;
-            tmp->data = p;
-            tmp->size = n;
-        }
-        --n;
-        ++p;
-    }
-
-#if STILL_DEBUG > 1
-    if (InStillPicture) {
-        fprintf(stderr, "\nfix:%9d.%02x %02x %02x %02x\n", tmp->size, tmp->data[0], tmp->data[1], tmp->data[2],
-                tmp->data[3]);
-    }
-#endif
-    CodecVideoDecode(vdecoder, tmp);
-}
-#endif
-
 /**
 **  Open video stream.
 **
@@ -1913,29 +1678,12 @@ int VideoDecodeInput(VideoStream *stream, int trick) {
     avpkt->size = avpkt->stream_index;
     avpkt->stream_index = 0;
 
-#if defined(USE_PIP) || defined(VAAPI)
-    // fprintf(stderr, "[");
-    // DumpMpeg(avpkt->data, avpkt->size);
-#ifdef STILL_DEBUG
-    if (InStillPicture) {
-        DumpMpeg(avpkt->data, avpkt->size);
-    }
-#endif
-    // lock decoder against close
-    pthread_mutex_lock(&stream->DecoderLockMutex);
-    if (stream->Decoder) {
-        CodecVideoDecode(stream->Decoder, avpkt);
-    }
-    pthread_mutex_unlock(&stream->DecoderLockMutex);
-    // fprintf(stderr, "]\n");
-#else
     // old version
     if (stream->LastCodecID == AV_CODEC_ID_MPEG2VIDEO) {
         FixPacketForFFMpeg(stream->Decoder, avpkt);
     } else {
         CodecVideoDecode(stream->Decoder, avpkt);
     }
-#endif
 
     avpkt->size = saved_size;
 
@@ -2263,11 +2011,7 @@ int PlayVideo3(VideoStream *stream, const uint8_t *data, int size) {
         }
 
         // SKIP PES header, begin of start code
-#if defined(USE_PIP) || defined(VAAPI)
-        VideoMpegEnqueue(stream, pts, dts, check - 2, l + 2);
-#else
         VideoEnqueue(stream, pts, dts, check - 2, l + 2);
-#endif
         return size;
     }
     // this happens when vdr sends incomplete packets
@@ -2275,26 +2019,6 @@ int PlayVideo3(VideoStream *stream, const uint8_t *data, int size) {
         Debug(3, "video: not detected\n");
         return size;
     }
-
-#if defined(USE_PIP) || defined(VAAPI)
-    if (stream->CodecID == AV_CODEC_ID_MPEG2VIDEO) {
-        // SKIP PES header
-        VideoMpegEnqueue(stream, pts, dts, data + 9 + n, size - 9 - n);
-#ifndef USE_MPEG_COMPLETE
-        if (size < 65526) {
-            // mpeg codec supports incomplete packets
-            // waiting for a full complete packages, increases needed delays
-            // PES recordings sends incomplete packets
-            // incomplete packets  breaks the decoder for some stations
-            // for the new USE_PIP code, this is only a very little improvement
-            VideoNextPacket(stream, stream->CodecID);
-        }
-#endif
-    } else {
-        // SKIP PES header
-        VideoEnqueue(stream, pts, dts, data + 9 + n, size - 9 - n);
-    }
-#else
 
     // SKIP PES header
     VideoEnqueue(stream, pts, dts, data + 9 + n, size - 9 - n);
@@ -2307,7 +2031,6 @@ int PlayVideo3(VideoStream *stream, const uint8_t *data, int size) {
         // waiting for a full complete packages, increases needed delays
         VideoNextPacket(stream, AV_CODEC_ID_MPEG2VIDEO);
     }
-#endif
 
     return size;
 }

@@ -12,11 +12,9 @@
 #  comment out if not needed
 
 # what kind of decoder do we make -
-# if VAAPI is enabled the pluginname is softhdvaapi
 # if CUVID is enabled the pluginname is softhdcuvid
 # if DRM   is enabled the pluginname is softhddrm
-VAAPI ?= 0
-CUVID ?= 0
+CUVID ?= 1
 
 # if you enable DRM then the plugin will only run without X server
 # only valid for VAAPI
@@ -24,7 +22,7 @@ DRM ?= 0
 
 # use libplacebo -
 # available for all decoders but for DRM and VAAPI you need LIBPLACEBO_GL
-LIBPLACEBO ?= 0
+LIBPLACEBO ?= 1
 LIBPLACEBO_GL ?= 0
 
 # use YADIF deint - only available with cuvid
@@ -41,12 +39,10 @@ CONFIG := -DDEBUG 		# remove '#' to enable debug output
 ifneq "$(MAKECMDGOALS)" "clean"
 ifneq "$(MAKECMDGOALS)" "indent"
 
-ifeq ($(VAAPI),0)
 ifeq ($(CUVID),0)
 ifeq ($(DRM),0)
 $(error Please define a plugin in the Makefile)
 exit 1;
-endif
 endif
 endif
 
@@ -60,10 +56,8 @@ endif
 
 
 ifeq ($(CUVID),1)
-ifeq ($(VAAPI),1)
 $(error Mismatch in Plugin selection)
 exit 1;
-endif
 endif
 
 endif # MAKECMDGOALS!=indent
@@ -148,12 +142,6 @@ _CFLAGS += $(shell pkg-config --cflags gl glu glew)
 #LIBS += $(shell pkg-config --libs glu glew)
 _CFLAGS += $(shell pkg-config --cflags freetype2)
 LIBS   += $(shell pkg-config --libs freetype2)
-endif
-
-ifeq ($(VAAPI),1)
-CONFIG += -DVAAPI
-#LIBPLACEBO=1
-PLUGIN = softhdvaapi
 endif
 
 ifeq ($(LIBPLACEBO_GL),1)

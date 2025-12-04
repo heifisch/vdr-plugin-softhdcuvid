@@ -2458,15 +2458,7 @@ class cSoftHdDevice : public cDevice {
   public:
     cSoftHdDevice(void);
     virtual ~cSoftHdDevice(void);
-#ifdef CUVID
     virtual cString DeviceName(void) const { return "softhdcuvid"; }
-#endif
-#if defined(VAAPI) && !defined(USE_DRM)
-    virtual cString DeviceName(void) const { return "softhdvaapi"; }
-#endif
-#if defined(VAAPI) && defined(USE_DRM)
-    virtual cString DeviceName(void) const { return "softhddrm"; }
-#endif
     virtual bool HasDecoder(void) const;
     virtual bool CanReplay(void) const;
     virtual bool SetPlayMode(ePlayMode);
