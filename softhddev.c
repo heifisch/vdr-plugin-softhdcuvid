@@ -1467,6 +1467,83 @@ static void VideoNextPacket(VideoStream *stream, int codec_id) {
 }
 
 /**
+**  Fix packet for FFMpeg.
+**
+**  Some tv-stations sends mulitple pictures in a single PES packet.
+**  Current ffmpeg 0.10 and libav-0.8 has problems with this.
+**  Split the packet into single picture packets.
+**
+**  FIXME: there are stations which have multiple pictures and
+**  the last picture incomplete in the PES packet.
+**
+**  FIXME: move function call into PlayVideo, than the hardware
+**  decoder didn't need to support multiple frames decoding.
+**
+**  @param avpkt    ffmpeg a/v packet
+*/
+
+#if !defined USE_PIP &&  !defined VAAPI
+static void FixPacketForFFMpeg(VideoDecoder *vdecoder, AVPacket *avpkt) {
+    uint8_t *p;
+    int n;
+    AVPacket tmp[1];
+    int first;
+
+    p = avpkt->data;
+    n = avpkt->size;
+    *tmp = *avpkt;
+
+    first = 1;
+#if STILL_DEBUG > 1
+    if (InStillPicture) {
+        fprintf(stderr, "fix(%d): ", n);
+    }
+#endif
+
+    while (n > 3) {
+#if STILL_DEBUG > 1
+        if (InStillPicture && !p[0] && !p[1] && p[2] == 0x01) {
+            fprintf(stderr, " %02x", p[3]);
+        }
+#endif
+        // scan for picture header 0x00000100
+        if (!p[0] && !p[1] && p[2] == 0x01 && !p[3]) {
+            if (first) {
+                first = 0;
+                n -= 4;
+                p += 4;
+                continue;
+            }
+            // packet has already an picture header
+            tmp->size = p - tmp->data;
+#if STILL_DEBUG > 1
+            if (InStillPicture) {
+                fprintf(stderr, "\nfix:%9d,%02x %02x %02x %02x\n", tmp->size, tmp->data[0], tmp->data[1], tmp->data[2],
+                        tmp->data[3]);
+            }
+#endif
+            CodecVideoDecode(vdecoder, tmp);
+            // time-stamp only valid for first packet
+            tmp->pts = AV_NOPTS_VALUE;
+            tmp->dts = AV_NOPTS_VALUE;
+            tmp->data = p;
+            tmp->size = n;
+        }
+        --n;
+        ++p;
+    }
+
+#if STILL_DEBUG > 1
+    if (InStillPicture) {
+        fprintf(stderr, "\nfix:%9d.%02x %02x %02x %02x\n", tmp->size, tmp->data[0], tmp->data[1], tmp->data[2],
+                tmp->data[3]);
+    }
+#endif
+    CodecVideoDecode(vdecoder, tmp);
+}
+#endif
+
+/**
 **  Open video stream.
 **
 **  @param stream   video stream

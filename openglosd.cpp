@@ -294,7 +294,7 @@ void cOglGlyph::LoadTexture(FT_BitmapGlyph ftGlyph) {
 
 extern "C" void GlxInitopengl();
 extern "C" void GlxDrawopengl();
-extern "C" void GlxDestroy();
+//extern "C" void GlxDestroy();
 extern "C" void makejpg(uint8_t *data, int width, int height);
 
 /****************************************************************************************
@@ -1725,7 +1725,7 @@ void cOglThread::Cleanup(void) {
     DeleteShaders();
     // glVDPAUFiniNV();
     cOglFont::Cleanup();
-    GlxDestroy();
+//    GlxDestroy();
     pthread_mutex_unlock(&OSDMutex);
 }
 

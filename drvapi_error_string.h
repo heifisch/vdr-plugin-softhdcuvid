@@ -1,49 +1,33 @@
-/* Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+
+/*
+ * Copyright 1993-2013 NVIDIA Corporation.  All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
+ * Please refer to the NVIDIA end user license agreement (EULA) associated
+ * with this source code for terms and conditions that govern your use of
+ * this software. Any use, reproduction, disclosure, or distribution of
+ * this software and related documentation outside the terms of the EULA
+ * is strictly prohibited.
  *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef COMMON_DRVAPI_ERROR_STRING_H_
-#define COMMON_DRVAPI_ERROR_STRING_H_
+#ifndef _DRVAPI_ERROR_STRING_H_
+#define _DRVAPI_ERROR_STRING_H_
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __cuda_cuda_h__  // check to see if CUDA_H is included above
-
 // Error Code string definitions here
 typedef struct {
-  char const *error_string;
-  int error_id;
+    char const *error_string;
+    unsigned int error_id;
 } s_CudaErrorStr;
 
 /**
  * Error codes
  */
-static s_CudaErrorStr sCudaDrvErrorString[] = {
+s_CudaErrorStr sCudaDrvErrorString[] = {
+
     /**
      * The API call returned with no errors. In the case of query calls, this
      * can also mean that the operation being queried is complete (see
@@ -79,21 +63,25 @@ static s_CudaErrorStr sCudaDrvErrorString[] = {
      * in visual profiler mode.
      */
     {"CUDA_ERROR_PROFILER_DISABLED", 5},
+
     /**
      * This indicates profiling has not been initialized for this context.
      * Call cuProfilerInitialize() to resolve this.
      */
     {"CUDA_ERROR_PROFILER_NOT_INITIALIZED", 6},
+
     /**
      * This indicates profiler has already been started and probably
      * cuProfilerStart() is incorrectly called.
      */
     {"CUDA_ERROR_PROFILER_ALREADY_STARTED", 7},
+
     /**
      * This indicates profiler has already been stopped and probably
      * cuProfilerStop() is incorrectly called.
      */
     {"CUDA_ERROR_PROFILER_ALREADY_STOPPED", 8},
+
     /**
      * This indicates that no CUDA-capable devices were detected by the
      * installed CUDA driver.
@@ -104,8 +92,7 @@ static s_CudaErrorStr sCudaDrvErrorString[] = {
      * This indicates that the device ordinal supplied by the user does not
      * correspond to a valid CUDA device.
      */
-    {"CUDA_ERROR_INVALID_DEVICE (device specified is not a valid CUDA device)",
-     101},
+    {"CUDA_ERROR_INVALID_DEVICE (device specified is not a valid CUDA device)", 101},
 
     /**
      * This indicates that the device kernel image is invalid. This can also
@@ -451,20 +438,17 @@ static s_CudaErrorStr sCudaDrvErrorString[] = {
 
 // This is just a linear search through the array, since the error_id's are not
 // always ocurring consecutively
-inline const char *getCudaDrvErrorString(CUresult error_id) {
-  int index = 0;
+static inline const char *getCudaDrvErrorString(CUresult error_id) {
+    int index = 0;
 
-  while (sCudaDrvErrorString[index].error_id != error_id &&
-         sCudaDrvErrorString[index].error_id != -1) {
-    index++;
-  }
+    while (sCudaDrvErrorString[index].error_id != error_id && (int)sCudaDrvErrorString[index].error_id != -1) {
+        index++;
+    }
 
-  if (sCudaDrvErrorString[index].error_id == error_id)
-    return (const char *)sCudaDrvErrorString[index].error_string;
-  else
-    return (const char *)"CUDA_ERROR not found!";
+    if (sCudaDrvErrorString[index].error_id == error_id)
+        return (const char *)sCudaDrvErrorString[index].error_string;
+    else
+        return (const char *)"CUDA_ERROR not found!";
 }
 
-#endif  // __cuda_cuda_h__
-
-#endif  //  COMMON_DRVAPI_ERROR_STRING_H_
+#endif

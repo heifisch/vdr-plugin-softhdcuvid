@@ -1937,6 +1937,166 @@ static unsigned CuvidGetVideoSurface(CuvidDecoder *decoder, const AVCodecContext
     return CuvidGetVideoSurface0(decoder);
 }
 
+#if defined(YADIF)
+static void CuvidSyncRenderFrame(CuvidDecoder *decoder, const AVCodecContext *video_ctx, AVFrame *frame);
+
+int push_filters(AVCodecContext *dec_ctx, CuvidDecoder *decoder, AVFrame *frame) {
+
+    int ret;
+    AVFrame *filt_frame = av_frame_alloc();
+
+    /* push the decoded frame into the filtergraph */
+    if (av_buffersrc_add_frame_flags(decoder->buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0) {
+        av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
+    }
+
+    // printf("Interlaced %d tff
+    // %d\n",frame->interlaced_frame,frame->top_field_first);
+    /* pull filtered frames from the filtergraph */
+    while ((ret = av_buffersink_get_frame(decoder->buffersink_ctx, filt_frame)) >= 0) {
+        filt_frame->pts /= 2;
+        decoder->Interlaced = 0;
+        CuvidSyncRenderFrame(decoder, dec_ctx, filt_frame);
+        filt_frame = av_frame_alloc(); // get new frame
+    }
+    av_frame_free(&filt_frame);
+    av_frame_free(&frame);
+    return ret;
+}
+
+int init_filters(AVCodecContext *dec_ctx, CuvidDecoder *decoder, AVFrame *frame) {
+    enum AVPixelFormat format = PIXEL_FORMAT;
+
+#ifdef YADIF
+    const char *filters_descr = "yadif_cuda=1:0:1"; // mode=send_field,parity=tff,deint=interlaced";
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(59,40,100)
+    enum AVPixelFormat pix_fmts[] = {format, AV_PIX_FMT_NONE};
+#endif
+#endif
+
+    char args[512];
+    int ret = 0;
+    const AVFilter *buffersrc = avfilter_get_by_name("buffer");
+    const AVFilter *buffersink = avfilter_get_by_name("buffersink");
+    AVFilterInOut *outputs = avfilter_inout_alloc();
+    AVFilterInOut *inputs = avfilter_inout_alloc();
+    AVBufferSrcParameters *src_params;
+
+    if (decoder->filter_graph)
+        avfilter_graph_free(&decoder->filter_graph);
+
+    decoder->filter_graph = avfilter_graph_alloc();
+    if (!outputs || !inputs || !decoder->filter_graph) {
+        ret = AVERROR(ENOMEM);
+        goto end;
+    }
+
+
+#if LIBAVFILTER_VERSION_INT < AV_VERSION_INT(9,16,100)
+    snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d", 
+        dec_ctx->width,dec_ctx->height, format, 1, 90000, 
+        dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den);
+#else
+    snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d:colorspace=%d:range=%d",
+        dec_ctx->width,dec_ctx->height, dec_ctx->pix_fmt, 
+        dec_ctx->pkt_timebase.num, dec_ctx->pkt_timebase.den, 
+        dec_ctx->sample_aspect_ratio.num, dec_ctx->sample_aspect_ratio.den,
+        dec_ctx->colorspace,dec_ctx->color_range);
+#endif
+    decoder->buffersrc_ctx = avfilter_graph_alloc_filter(decoder->filter_graph, buffersrc, "in");
+
+    if (!decoder->buffersrc_ctx) {
+        Debug(3,"Cannot alloc buffer source %s\n", args);
+        goto end;
+    }
+ 
+    src_params = av_buffersrc_parameters_alloc();
+    src_params->hw_frames_ctx = frame->hw_frames_ctx;
+    src_params->format = format;
+    src_params->time_base.num = 1;
+    src_params->time_base.den = 90000;
+    src_params->width = dec_ctx->width;
+    src_params->height = dec_ctx->height;
+    src_params->frame_rate.num = 50;
+    src_params->frame_rate.den = 1;
+    src_params->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
+
+    // printf("width %d height %d hw_frames_ctx
+    // %p\n",dec_ctx->width,dec_ctx->height ,frame->hw_frames_ctx);
+    ret = av_buffersrc_parameters_set(decoder->buffersrc_ctx, src_params);
+    av_free(src_params);
+    if (ret < 0) {
+        Debug(3, "Cannot set hw_frames_ctx to src\n");
+        goto end;
+    }
+
+    ret = avfilter_init_str(decoder->buffersrc_ctx, args);
+
+    if (ret < 0) {
+        Error(_("Cannot init buffer source %s\n"), args);
+        goto end;
+    }
+
+    /* buffer video sink: to terminate the filter chain. */
+    ret = avfilter_graph_create_filter(&decoder->buffersink_ctx, buffersink, "out", NULL, NULL, decoder->filter_graph);
+    if (ret < 0) {
+        Debug(3, "Cannot create buffer sink\n");
+        goto end;
+    }
+#ifdef YADIF
+#if LIBAVUTIL_VERSION_INT < AV_VERSION_INT(59,40,100)
+    ret = av_opt_set_int_list(decoder->buffersink_ctx, "pix_fmts", pix_fmts, AV_PIX_FMT_NONE, AV_OPT_SEARCH_CHILDREN);
+    if (ret < 0) {
+        Debug(3, "Cannot set output pixel format\n");
+        goto end;
+    }
+#endif
+#endif
+    /*
+     * Set the endpoints for the filter graph. The filter_graph will
+     * be linked to the graph described by filters_descr.
+     */
+
+    /*
+     * The buffer source output must be connected to the input pad of
+     * the first filter described by filters_descr; since the first
+     * filter input label is not specified, it is set to "in" by
+     * default.
+     */
+    outputs->name = av_strdup("in");
+    outputs->filter_ctx = decoder->buffersrc_ctx;
+    outputs->pad_idx = 0;
+    outputs->next = NULL;
+
+    /*
+     * The buffer sink input must be connected to the output pad of
+     * the last filter described by filters_descr; since the last
+     * filter output label is not specified, it is set to "out" by
+     * default.
+     */
+    inputs->name = av_strdup("out");
+    inputs->filter_ctx = decoder->buffersink_ctx;
+    inputs->pad_idx = 0;
+    inputs->next = NULL;
+
+    if ((ret = avfilter_graph_parse_ptr(decoder->filter_graph, filters_descr, &inputs, &outputs, NULL)) < 0) {
+        Debug(3, "Cannot set graph parse %d\n", ret);
+        goto end;
+    }
+
+    if ((ret = avfilter_graph_config(decoder->filter_graph, NULL)) < 0) {
+        Debug(3, "Cannot set graph config %d\n", ret);
+        goto end;
+    }
+
+end:
+    avfilter_inout_free(&inputs);
+    avfilter_inout_free(&outputs);
+
+    return ret;
+}
+#endif
+
 ///
 /// Callback to negotiate the PixelFormat.
 ///

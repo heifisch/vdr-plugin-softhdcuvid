@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: VDR \n"
 "Report-Msgid-Bugs-To: <see README>\n"
-"POT-Creation-Date: 2025-12-04 21:25+0100\n"
+"POT-Creation-Date: 2025-12-04 22:29+0100\n"
 "PO-Revision-Date: blabla\n"
 "Last-Translator: blabla\n"
 "Language-Team: blabla\n"
@@ -722,6 +722,10 @@ msgid "video/cuvid: SDL error %d\n"
 msgstr ""
 
 msgid "Unable to create placebo textures"
+msgstr ""
+
+#, c-format
+msgid "Cannot init buffer source %s\n"
 msgstr ""
 
 msgid "video: no valid pixfmt found\n"
