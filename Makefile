@@ -14,12 +14,10 @@
 # what kind of decoder do we make -
 # if CUVID is enabled the pluginname is softhdcuvid
 # if DRM   is enabled the pluginname is softhddrm
-CUVID ?= 1
 
 # use libplacebo -
 # available for all decoders but for DRM and VAAPI you need LIBPLACEBO_GL
 LIBPLACEBO ?= 1
-LIBPLACEBO_GL ?= 0
 
 # use YADIF deint - only available with cuvid
 YADIF = 1
@@ -119,13 +117,7 @@ _CFLAGS += $(shell pkg-config --cflags freetype2)
 LIBS   += $(shell pkg-config --libs freetype2)
 endif
 
-ifeq ($(LIBPLACEBO_GL),1)
-CONFIG += -DPLACEBO_GL -DPLACEBO
-_CFLAGS += $(shell pkg-config --cflags libplacebo)
-LIBS += $(shell pkg-config --libs epoxy libplacebo)
-else
 LIBS += $(shell pkg-config --libs egl)
-endif
 
 ifeq ($(LIBPLACEBO),1)
 CONFIG += -DPLACEBO
@@ -133,7 +125,6 @@ _CFLAGS += $(shell pkg-config --cflags libplacebo)
 LIBS += $(shell pkg-config --libs egl libplacebo)
 endif
 
-ifeq ($(CUVID),1)
 export CFLAGS	= $(call PKGCFG,cflags) -fpermissive
 export CXXFLAGS = $(call PKGCFG,cxxflags) -fpermissive
 #CONFIG += -DUSE_PIP			# PIP support
@@ -141,7 +132,6 @@ CONFIG += -DCUVID			# enable CUVID decoder
 LIBS += $(shell pkg-config --libs egl gl)
 ifeq ($(YADIF),1)
 CONFIG += -DYADIF			# Yadif only with CUVID
-endif
 endif
 
 ifeq ($(GAMMA),1)
@@ -225,10 +215,7 @@ _CFLAGS += -I./opengl -I./
 
 LIBS += -L/usr/lib64
 
-
-ifeq ($(CUVID),1)
 LIBS += -lcuda -lnvcuvid
-endif
 
 LIBS += -lGLEW -lGLU  -ldl -lglut
 #LIBS += -ldl $(shell pkg-config --libs glew glu glut)

@@ -1,11 +1,7 @@
 // shader
 #define SHADER_LENGTH 10000
 
-#ifdef CUVID
 const char *gl_version = "#version 330";
-#else
-const char *gl_version = "#version 300 es ";
-#endif
 
 /* Color conversion matrix: RGB = m * YUV + c
  * m is in row-major matrix, with m[row][col], e.g.:

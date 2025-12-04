@@ -17,11 +17,7 @@ void ConvertColor(const GLint &colARGB, glm::vec4 &col) {
  * cShader
  ****************************************************************************************/
 
-#ifdef CUVID
 const char *glversion = "#version 330 core ";
-#else
-const char *glversion = "#version 300 es  ";
-#endif
 
 const char *rectVertexShader = "%s\n \
 \

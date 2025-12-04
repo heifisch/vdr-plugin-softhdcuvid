@@ -224,7 +224,6 @@ void CodecVideoOpen(VideoDecoder *decoder, int codec_id) {
     }
 
     name = "NULL";
-#ifdef CUVID
     if (!strcasecmp(VideoGetDriverName(), "cuvid")) {
         switch (codec_id) {
             case AV_CODEC_ID_MPEG2VIDEO:
@@ -238,7 +237,6 @@ void CodecVideoOpen(VideoDecoder *decoder, int codec_id) {
                 break;
         }
     }
-#endif
     if (name && (video_codec = avcodec_find_decoder_by_name(name))) {
         Debug(3, "codec: decoder found\n");
     } else if ((video_codec = avcodec_find_decoder(codec_id)) == NULL) {
@@ -270,7 +268,6 @@ void CodecVideoOpen(VideoDecoder *decoder, int codec_id) {
     pthread_mutex_lock(&CodecLockMutex);
     // open codec
 
-#ifdef CUVID
     int deint = 2;
     if (strcmp(decoder->VideoCodec->long_name,
                "Nvidia CUVID MPEG2VIDEO decoder") == 0) { // deinterlace for mpeg2 is somehow broken
@@ -302,7 +299,6 @@ void CodecVideoOpen(VideoDecoder *decoder, int codec_id) {
             Fatal(_("codec: can't set option drop 2.field  to video codec!\n"));
         }
     }
-#endif
 
     if ((ret = avcodec_open2(decoder->VideoCtx, video_codec, NULL)) < 0) {
         pthread_mutex_unlock(&CodecLockMutex);
@@ -422,8 +418,6 @@ extern int init_filters(AVCodecContext *dec_ctx, void *decoder, AVFrame *frame);
 extern int push_filters(AVCodecContext *dec_ctx, void *decoder, AVFrame *frame);
 #endif
 
-#ifdef CUVID
-
 void CodecVideoDecode(VideoDecoder *decoder, const AVPacket *avpkt) {
     AVCodecContext *video_ctx;
     AVFrame *frame;
@@ -504,7 +498,6 @@ next_part:
         goto next_part; // try again to stuff decoder
     }
 }
-#endif
 
 /**
 **  Flush the video decoder.
