@@ -16,10 +16,6 @@
 # if DRM   is enabled the pluginname is softhddrm
 CUVID ?= 1
 
-# if you enable DRM then the plugin will only run without X server
-# only valid for VAAPI
-DRM ?= 0
-
 # use libplacebo -
 # available for all decoders but for DRM and VAAPI you need LIBPLACEBO_GL
 LIBPLACEBO ?= 1
@@ -38,27 +34,6 @@ CONFIG := -DDEBUG 		# remove '#' to enable debug output
 # sanitize selections --------
 ifneq "$(MAKECMDGOALS)" "clean"
 ifneq "$(MAKECMDGOALS)" "indent"
-
-ifeq ($(CUVID),0)
-ifeq ($(DRM),0)
-$(error Please define a plugin in the Makefile)
-exit 1;
-endif
-endif
-
-
-ifeq ($(CUVID),1)
-ifeq ($(DRM),1)
-$(error Mismatch in Plugin selection)
-exit 1;
-endif
-endif
-
-
-ifeq ($(CUVID),1)
-$(error Mismatch in Plugin selection)
-exit 1;
-endif
 
 endif # MAKECMDGOALS!=indent
 endif # MAKECMDGOALS!=clean
@@ -156,13 +131,6 @@ ifeq ($(LIBPLACEBO),1)
 CONFIG += -DPLACEBO
 _CFLAGS += $(shell pkg-config --cflags libplacebo)
 LIBS += $(shell pkg-config --libs egl libplacebo)
-endif
-
-ifeq ($(DRM),1)
-PLUGIN = softhddrm
-CONFIG += -DUSE_DRM -DVAAPI
-_CFLAGS += $(shell pkg-config --cflags libdrm)
-LIBS += $(shell pkg-config --libs egl gbm libdrm)
 endif
 
 ifeq ($(CUVID),1)
@@ -284,11 +252,7 @@ override CFLAGS	  += $(_CFLAGS) $(DEFINES) $(INCLUDES) \
 OBJS = softhdcuvid.o softhddev.o video.o audio.o codec.o ringbuffer.o openglosd.o
 ifeq ($(GAMMA),1)
 OBJS += colorramp.o
-ifeq ($(DRM),1)
-OBJS += gamma-drm.o
-else
 OBJS += gamma-vidmode.o
-endif
 endif
 
 SRCS = $(wildcard $(OBJS:.o=.c)) *.cpp

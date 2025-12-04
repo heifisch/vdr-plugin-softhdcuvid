@@ -1265,13 +1265,6 @@ bool cOglCmdDrawImage::Execute(void) {
     if (width <= 0 || height <= 0)
         return false;
     GLuint texture;
-
-#ifdef USE_DRM
-    //esyslog("upload Image\n");
-    pthread_mutex_lock(&OSDMutex);
-    GlxDrawopengl(); // here we need the Shared Context for upload
-    GlxCheck();
-#endif
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_BGRA, GL_UNSIGNED_INT_8_8_8_8_REV, argb);
@@ -1281,12 +1274,6 @@ bool cOglCmdDrawImage::Execute(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
     glFlush();
-#ifdef USE_DRM  
-    GlxInitopengl(); // Reset Context
-    GlxCheck();
-    pthread_mutex_unlock(&OSDMutex);
-#endif
-
     GLfloat x1 = x;                   // left
     GLfloat y1 = y;                   // top
     GLfloat x2 = x + width * scaleX;  // right
@@ -1375,12 +1362,6 @@ cOglCmdStoreImage::cOglCmdStoreImage(sOglImage *imageRef, tColor *argb) : cOglCm
 cOglCmdStoreImage::~cOglCmdStoreImage(void) { free(data); }
 
 bool cOglCmdStoreImage::Execute(void) {
-#ifdef USE_DRM
-    return false;
-    pthread_mutex_lock(&OSDMutex);
-    GlxDrawopengl(); // here we need the Shared Context for upload
-    GlxCheck();
-#endif
     glGenTextures(1, &imageRef->texture);
     glBindTexture(GL_TEXTURE_2D, imageRef->texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, imageRef->width, imageRef->height, 0, GL_BGRA,
@@ -1391,11 +1372,6 @@ bool cOglCmdStoreImage::Execute(void) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
     glFlush();
-#ifdef USE_DRM
-    GlxInitopengl(); // Reset Context
-    GlxCheck();
-    pthread_mutex_lock(&OSDMutex);
-#endif
     return true;
 }
 
@@ -1474,9 +1450,6 @@ int cOglThread::StoreImage(const cImage &image) {
     if (!maxCacheSize) {
         return 0;
     }
-#ifdef USE_DRM
-    return 0;
-#endif
     if (image.Width() > maxTextureSize || image.Height() > maxTextureSize) {
         esyslog("[softhddev] cannot store image of %dpx x %dpx "
                 "(maximum size is %dpx x %dpx) - falling back to "
@@ -1655,10 +1628,6 @@ void cOglThread::Action(void) {
 }
 
 bool cOglThread::InitOpenGL(void) {
-#ifdef USE_DRM
-    esyslog("InitOpenGL\n");
-    GlxInitopengl();
-#else
     const char *displayName = X11DisplayName;
 
     if (!displayName) {
@@ -1696,7 +1665,6 @@ bool cOglThread::InitOpenGL(void) {
                 glewGetString(GLEW_VERSION));
         //	  return false;
     }
-#endif
 
     VertexBuffers[vbText]->EnableBlending();
     glDisable(GL_DEPTH_TEST);
@@ -1761,11 +1729,7 @@ void cOglThread::Cleanup(void) {
     DeleteShaders();
     // glVDPAUFiniNV();
     cOglFont::Cleanup();
-#ifndef USE_DRM
-    glutExit();
-#else
     GlxDestroy();
-#endif
     pthread_mutex_unlock(&OSDMutex);
 }
 

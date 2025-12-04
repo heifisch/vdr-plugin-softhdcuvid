@@ -491,9 +491,6 @@ static void GlxSetupWindow(xcb_window_t window, int width, int height, GLXContex
 GLXContext OSDcontext;
 #else
 static EGLContext eglSharedContext;     ///< shared gl context
-#ifdef USE_DRM
-static EGLContext eglOSDContext = NULL; ///< our gl context for the thread
-#endif
 static EGLContext eglContext;           ///< our gl context
 static EGLConfig eglConfig;
 static EGLDisplay eglDisplay;
@@ -577,14 +574,6 @@ char *eglErrorString(EGLint error) {
             Debug(3, "video/egl: %s:%d error %d %s\n", __FILE__, __LINE__, err, eglErrorString(err));                 \
         }                                                                                                             \
     }
-
-//----------------------------------------------------------------------------
-//  DRM Helper Functions
-//----------------------------------------------------------------------------
-#ifdef USE_DRM
-#include "drm.c"
-#include "hdr.c"
-#endif
 
 ///
 /// Update video pts.
@@ -675,12 +664,8 @@ static void VideoUpdateOutput(AVRational input_aspect_ratio, int input_width, in
         *output_height = video_height;
         return;
     }
-#ifdef USE_DRM
-    get_drm_aspect(&display_aspect_ratio.num, &display_aspect_ratio.den);
-#else
     display_aspect_ratio.num = VideoScreen->width_in_pixels;
     display_aspect_ratio.den = VideoScreen->height_in_pixels;
-#endif
     av_reduce(&display_aspect_ratio.num, &display_aspect_ratio.den, display_aspect_ratio.num, display_aspect_ratio.den,
               1024 * 1024);
 
@@ -1187,11 +1172,6 @@ static void EglExit(void) {
         glxSharedContext = NULL;
     }
 #else
-#ifdef USE_DRM
-    drm_clean_up();
-
-#endif
-    
     eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
     if (eglSurface) {
@@ -2057,18 +2037,10 @@ void createTextureDst(CuvidDecoder *decoder, int anz, unsigned int size_x, unsig
     Debug(3, "video: create %d Textures Format %s w %d h %d \n", anz, PixFmt == AV_PIX_FMT_NV12 ? "NV12" : "P010",
           size_x, size_y);
 
-#ifdef USE_DRM
-    // set_video_mode(size_x,size_y);	// switch Mode here (highly
-    // experimental)
-#endif
-
 #ifdef CUVID
     glXMakeCurrent(XlibDisplay, VideoWindow, glxSharedContext);
     GlxCheck();
 #else
-#ifdef USE_DRM
-    pthread_mutex_lock(&OSDMutex);
-#endif
     eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, eglSharedContext);
 #endif
 
@@ -3071,18 +3043,6 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
 
     current = decoder->SurfacesRb[decoder->SurfaceRead];
 
-#ifdef USE_DRM
-    AVFrame *frame;
-    AVFrameSideData *sd, *sd1 = NULL, *sd2 = NULL;
-    if (!decoder->Closing) {
-        frame = decoder->frames[current];
-        sd1 = av_frame_get_side_data(frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA);
-        sd2 = av_frame_get_side_data(frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL);
-
-        set_hdr_metadata(frame->color_primaries, frame->color_trc, sd1, sd2);
-    }
-#endif
-
     // Render Progressive frame
 #ifndef PLACEBO
     
@@ -3207,43 +3167,6 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
     // target.repr.bits.color_depth = 16;
     // target.repr.bits.bit_shift =0;
 
-#if USE_DRM
-    
-    frame = decoder->frames[current];
-
-    switch (VulkanTargetColorSpace) {
-        case 0: // Monitor
-            memcpy(&target->color, &pl_color_space_monitor, sizeof(struct pl_color_space));
-            break;
-        case 1: // sRGB
-            memcpy(&target->color, &pl_color_space_srgb, sizeof(struct pl_color_space));
-            break;
-        case 2: // HD TV
-            set_hdr_metadata(frame->color_primaries, frame->color_trc, sd1, sd2);
-            if (decoder->ColorSpace == AVCOL_SPC_BT470BG) {
-                target->color.primaries = PL_COLOR_PRIM_BT_601_625;
-                target->color.transfer = PL_COLOR_TRC_BT_1886;
-            } else {
-                memcpy(&target->color, &pl_color_space_bt709, sizeof(struct pl_color_space));
-            }
-            break;
-        case 3: // HDR TV
-            set_hdr_metadata(frame->color_primaries, frame->color_trc, sd1, sd2);
-            if (decoder->ColorSpace == AVCOL_SPC_BT2020_NCL) {
-                memcpy(&target->color, &pl_color_space_bt2020_hlg, sizeof(struct pl_color_space));
-            } else if (decoder->ColorSpace == AVCOL_SPC_BT470BG) {
-                target->color.primaries = PL_COLOR_PRIM_BT_601_625;
-                target->color.transfer = PL_COLOR_TRC_BT_1886;
-                ;
-            } else {
-                memcpy(&target->color, &pl_color_space_bt709, sizeof(struct pl_color_space));
-            }
-            break;
-        default:
-            memcpy(&target->color, &pl_color_space_monitor, sizeof(struct pl_color_space));
-            break;
-    }
-#else
     switch (VulkanTargetColorSpace) {
         case 0: // Monitor
             memcpy(&target->color, &pl_color_space_monitor, sizeof(struct pl_color_space));
@@ -3259,7 +3182,6 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
             memcpy(&target->color, &pl_color_space_monitor, sizeof(struct pl_color_space));
             break;
     }
-#endif
 
     //  Source crop
     if (VideoScalerTest) { // right side defined scaler
@@ -3597,10 +3519,6 @@ static void CuvidDisplayFrame(void) {
 #else
     eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglThreadContext);
     EglCheck();
-
-#ifndef USE_DRM
-    usleep(5000);
-#endif
 #endif
 
     glClear(GL_COLOR_BUFFER_BIT);
@@ -3814,12 +3732,8 @@ static void CuvidDisplayFrame(void) {
     glXSwapBuffers(XlibDisplay, VideoWindow);
     glXMakeCurrent(XlibDisplay, None, NULL);
 #else
-#ifndef USE_DRM
     eglSwapBuffers(eglDisplay, eglSurface);
     eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-#else
-    drm_swap_buffers();
-#endif
 #endif
 #endif
 
@@ -3833,13 +3747,9 @@ static void CuvidDisplayFrame(void) {
 
 #ifdef PLACEBO_GL
 void CuvidSwapBuffer() {
-#ifndef USE_DRM
     eglSwapBuffers(eglDisplay, eglSurface);
 //    eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE,
 //    EGL_NO_CONTEXT);
-#else
-    drm_swap_buffers();
-#endif
 }
 #endif
 
@@ -5086,9 +4996,7 @@ static void *VideoHandlerThread(void *dummy) {
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
         pthread_testcancel();
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
-#ifndef USE_DRM
         VideoPollEvent();
-#endif
         // first_time = GetusTicks();
         CuvidSyncDisplayFrame();
         // printf("syncdisplayframe exec %d\n",(GetusTicks()-first_time)/1000);
@@ -5179,11 +5087,9 @@ static void VideoThreadExit(void) {
 /// New video arrived, wakeup video thread.
 ///
 void VideoDisplayWakeup(void) {
-#ifndef USE_DRM
     if (!XlibDisplay) { // not yet started
         return;
     }
-#endif
 
     if (!VideoThread) { // start video thread, if needed
         VideoThreadInit();
@@ -6318,10 +6224,6 @@ void VideoInit(const char *display_name) {
     xcb_screen_iterator_t screen_iter;
     xcb_screen_t const *screen;
 
-#ifdef USE_DRM
-    VideoInitDrm();
-#else
-
     if (XlibDisplay) { // allow multiple calls
         Debug(3, "video: x11 already setup\n");
         return;
@@ -6391,7 +6293,7 @@ void VideoInit(const char *display_name) {
         } else { // default to fullscreen
             VideoWindowHeight = screen->height_in_pixels;
             VideoWindowWidth = screen->width_in_pixels;
-            //***********************************************************************************************
+            //***********************************************************************************************//
 #if DEBUG_no
             if (strcmp(":0.0", display_name) == 0) {
                 VideoWindowHeight = 1080;
@@ -6411,7 +6313,7 @@ void VideoInit(const char *display_name) {
     VideoCreateWindow(screen->root, screen->root_visual, screen->root_depth);
 
     Debug(3, "video: window prepared\n");
-#endif
+
     //
     //	prepare hardware decoder
     //
@@ -6430,7 +6332,6 @@ void VideoInit(const char *display_name) {
     VideoUsedModule = &NoopModule;
 
 found:;
-#ifndef USE_DRM
     // FIXME: make it configurable from gui
     if (getenv("NO_MPEG_HW")) {
         VideoHardwareDecoder = 1;
@@ -6444,7 +6345,6 @@ found:;
 
     // xcb_prefetch_maximum_request_length(Connection);
     xcb_flush(Connection);
-#endif
 #ifdef PLACEBO_NOT
     InitPlacebo();
 #endif
@@ -6455,7 +6355,6 @@ found:;
 ///
 void VideoExit(void) {
     Debug(3, "Video Exit\n");
-#ifndef USE_DRM
     if (!XlibDisplay) { // no init or failed
         return;
     }
@@ -6465,7 +6364,6 @@ void VideoExit(void) {
     //
     X11DPMSReenable(Connection);
     X11SuspendScreenSaver(Connection, 0);
-#endif
     VideoUsedModule->Exit();
     VideoUsedModule = &NoopModule;
 
@@ -6478,7 +6376,6 @@ void VideoExit(void) {
         EglExit(); // delete all contexts
     }
 #endif
-#ifndef USE_DRM
     //
     //	FIXME: cleanup.
     //
@@ -6511,38 +6408,7 @@ void VideoExit(void) {
         XlibDisplay = NULL;
         Connection = 0;
     }
-#endif
 }
-
-#ifdef USE_DRM
-int GlxInitopengl() {
-    EGLint contextAttrs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
-    while (!eglSharedContext)
-        sleep(1);
-
-    if (!eglOSDContext) {
-        eglOSDContext = eglCreateContext(eglDisplay, eglConfig, eglSharedContext, contextAttrs);
-        if (!eglOSDContext) {
-            EglCheck();
-            Fatal(_("video/egl: can't create thread egl context\n"));
-            return 1;
-        }
-    }
-    eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, eglOSDContext);
-    return 0;
-}
-
-int GlxDrawopengl() {
-    eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, eglSharedContext);
-    return 0;
-}
-
-void GlxDestroy() {
-    eglDestroyContext(eglDisplay, eglOSDContext);
-    eglOSDContext = NULL;
-}
-
-#endif
 
 #if 0 // for debug only
 #include <sys/stat.h>
