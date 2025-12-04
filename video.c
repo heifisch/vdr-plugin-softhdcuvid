@@ -163,9 +163,7 @@ typedef void *EGLImageKHR;
 #ifdef PLACEBO
 #define VK_USE_PLATFORM_XCB_KHR
 #include <libplacebo/vulkan.h>
-#if PL_API_VER >= 113
 #include <libplacebo/shaders/lut.h>
-#endif
 #include <libplacebo/renderer.h>
 #endif
 
@@ -1245,15 +1243,9 @@ struct file {
 };
 
 typedef struct priv {
-#if PL_API_VER >= 229
     const struct pl_gpu_t *gpu;
     const struct pl_vulkan_t *vk;
     const struct pl_vk_inst_t *vk_inst;
-#else
-    const struct pl_gpu *gpu;
-    const struct pl_vulkan *vk;
-    const struct pl_vk_inst *vk_inst;
-#endif
     const struct pl_log_t *ctx;
     struct pl_custom_lut *lut;
     struct pl_renderer_t *renderer;
@@ -1270,9 +1262,7 @@ typedef struct priv {
 
 static priv *p;
 static struct pl_overlay osdoverlay;
-#if PL_API_VER >= 229
 static struct pl_overlay_part part;
-#endif
 
 struct itimerval itimer;
 #endif
@@ -1799,9 +1789,6 @@ void createTextureDst(CuvidDecoder *decoder, int anz, unsigned int size_x, unsig
                     p->gpu, &(struct pl_tex_params) {
                         .w = n == 0 ? size_x : size_x / 2, .h = n == 0 ? size_y : size_y / 2, .d = 0, .format = fmt,
                         .sampleable = true, .host_writable = true, .blit_dst = true,
-#if PL_API_VER < 159
-                        .sample_mode = PL_TEX_SAMPLE_LINEAR, .address_mode = PL_TEX_ADDRESS_CLAMP,
-#endif
                         .export_handle = PL_HANDLE_FD,
                     });
             }
@@ -1855,11 +1842,6 @@ void createTextureDst(CuvidDecoder *decoder, int anz, unsigned int size_x, unsig
         }
         // make image
         img = &decoder->pl_frames[i];
-#if PL_API_VER < 159
-        img->signature = i;
-        img->width = size_x;
-        img->height = size_y;
-#endif
         img->num_planes = 2;
         img->repr.sys = PL_COLOR_SYSTEM_BT_709; // overwritten later
         img->repr.levels = PL_COLOR_LEVELS_TV;
@@ -2222,10 +2204,6 @@ int get_RGB(CuvidDecoder *decoder) {
     faktorx = (float)width / (float)VideoWindowWidth;
     faktory = (float)height / (float)VideoWindowHeight;
     fmt = pl_find_named_fmt(p->gpu, "bgra8");
-#if PL_API_VER < 159
-    target.fbo = pl_tex_create(
-        p->gpu, &(struct pl_tex_params) {
-#else
     target.num_planes = 1;
     target.planes[0].components = 4;
     target.planes[0].component_mapping[0] = PL_CHANNEL_R;
@@ -2235,24 +2213,13 @@ int get_RGB(CuvidDecoder *decoder) {
     target.planes[0].texture = pl_tex_create(
         p->gpu, &(struct pl_tex_params) {
 
-#endif
             .w = width, .h = height, .d = 0, .format = fmt, .sampleable = true, .renderable = true, .blit_dst = true,
             .host_readable = true,
-#if PL_API_VER < 159
-            .sample_mode = PL_TEX_SAMPLE_LINEAR, .address_mode = PL_TEX_ADDRESS_CLAMP,
-#endif
         });
-#if PL_API_VER >= 100
     target.crop.x0 = (float)decoder->OutputX * faktorx;
     target.crop.y0 = (float)decoder->OutputY * faktory;
     target.crop.x1 = (float)(decoder->OutputX + decoder->OutputWidth) * faktorx;
     target.crop.y1 = (float)(decoder->OutputY + decoder->OutputHeight) * faktory;
-#else
-    target.dst_rect.x0 = (float)decoder->OutputX * faktorx;
-    target.dst_rect.y0 = (float)decoder->OutputY * faktory;
-    target.dst_rect.x1 = (float)(decoder->OutputX + decoder->OutputWidth) * faktorx;
-    target.dst_rect.y1 = (float)(decoder->OutputY + decoder->OutputHeight) * faktory;
-#endif
     target.repr.sys = PL_COLOR_SYSTEM_RGB;
     target.repr.levels = PL_COLOR_LEVELS_PC;
     target.repr.alpha = PL_ALPHA_UNKNOWN;
@@ -2265,16 +2232,6 @@ int get_RGB(CuvidDecoder *decoder) {
     if (ovl) {
         target.overlays = ovl;
         target.num_overlays = 1;
-#if PL_API_VER < 229
-        x0 = ovl->rect.x0;
-        y0 = ovl->rect.y0;
-        x1 = ovl->rect.x1;
-        y1 = ovl->rect.y1;
-        ovl->rect.x0 = (float)x0 * faktorx;
-        ovl->rect.y0 = (float)y0 * faktory;
-        ovl->rect.x1 = (float)x1 * faktorx;
-        ovl->rect.y1 = (float)y1 * faktory;
-#else
         x0 = part.dst.x0;
         y0 = part.dst.y0;
         x1 = part.dst.x1;
@@ -2283,8 +2240,6 @@ int get_RGB(CuvidDecoder *decoder) {
         part.dst.y0 = (float)y0 * faktory;
         part.dst.x1 = (float)x1 * faktorx;
         part.dst.y1 = (float)y1 * faktory;
-#endif
-
 
     } else {
         target.overlays = 0;
@@ -2298,33 +2253,18 @@ int get_RGB(CuvidDecoder *decoder) {
     pl_gpu_finish(p->gpu);
 
     if (ovl) {
-#if PL_API_VER < 229
-        ovl->rect.x0 = x0;
-        ovl->rect.y0 = y0;
-        ovl->rect.x1 = x1;
-        ovl->rect.y1 = y1;
-#else
         part.dst.x0 = x0;
         part.dst.y0 = y0;
         part.dst.x1 = x1;
         part.dst.y1 = y1;
-#endif
     }
 
     pl_tex_download(
         p->gpu, &(struct pl_tex_transfer_params) { // download Data
-#if PL_API_VER < 159
-            .tex = target.fbo,
-#else
             .tex = target.planes[0].texture,
-#endif
             .ptr = base,
         });
-#if PL_API_VER < 159
-    pl_tex_destroy(p->gpu, &target.fbo);
-#else
     pl_tex_destroy(p->gpu, &target.planes[0].texture);
-#endif
 #endif
     return 0;
 }
@@ -2981,13 +2921,8 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
         target->crop.y1 = dst_video_rect.y1;
     }
 
-#if PL_API_VER < 100
-    if (level == 0)
-        pl_tex_clear(p->gpu, target->fbo, (float[4]){0});
-#else
     if (!level && pl_frame_is_cropped(target))
         pl_frame_clear(p->gpu, target, (float[3]){0});
-#endif
     if (VideoColorBlindness) {
         switch (VideoColorBlindness) {
             case 1:
@@ -3018,11 +2953,7 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
     render_params.downscaler = pl_filter_presets[VideoScaling[decoder->Resolution]].filter;
 
     if (level)
-#if PL_API_VER < 346
-        render_params.skip_target_clearing = 1;
-#else
         render_params.border = PL_CLEAR_SKIP;
-#endif
 
     render_params.color_adjustment = &colors;
 
@@ -3031,9 +2962,7 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
     colors.saturation = VideoSaturation;
     colors.hue = VideoHue;
     colors.gamma = VideoGamma;
-#if PL_API_VER >= 119
     colors.temperature = VideoTemperature;
-#endif
 
     if (ovl) {
         target->overlays = ovl;
@@ -3043,7 +2972,6 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
         target->num_overlays = 0;
     }
 
-#if PL_API_VER >= 58
     if (decoder->newchannel == 1 && !level) { // got new textures
         p->num_shaders = 0;
         for (int i = NUM_SHADERS - 1; i >= 0; i--) { // Remove shaders in invers order
@@ -3069,10 +2997,6 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
     } else {
         render_params.num_hooks = p->num_shaders;
     }
-#endif
-
-    
-
 
     if (decoder->newchannel && current == 0) {
         colors.brightness = -1.0f;
@@ -3089,8 +3013,7 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
     if (!pl_render_image(p->renderer, &decoder->pl_frames[current], target, &render_params)) {
         Debug(4, "Failed rendering frame!\n");
     }
-    
-    
+
     // printf("Rendertime %ld -- \n,",GetusTicks() - tt);
 
     if (VideoScalerTest) { // left side test scaler
@@ -3111,11 +3034,7 @@ static void CuvidMixVideo(CuvidDecoder *decoder, __attribute__((unused)) int lev
 
         //	render_params.lut = NULL;
         render_params.num_hooks = 0;
-#if PL_API_VER < 346
-        render_params.skip_target_clearing = 1;
-#else
         render_params.border = PL_CLEAR_SKIP;
-#endif
 
         if (!p->renderertest)
             p->renderertest = pl_renderer_create(p->ctx, p->gpu);
@@ -3136,43 +3055,14 @@ void make_osd_overlay(int x, int y, int width, int height) {
     const struct pl_fmt *fmt;
     struct pl_overlay *pl;
 
-    
-
     fmt = pl_find_named_fmt(p->gpu, "rgba8"); // 8 Bit RGB
 
     pl = &osdoverlay;
 
-#if PL_API_VER < 229
-    if (pl->plane.texture && (pl->plane.texture->params.w != width || pl->plane.texture->params.h != height)) {
-        pl_tex_destroy(p->gpu, &pl->plane.texture);
-#else
     if (pl->tex && (pl->tex->params.w != width || pl->tex->params.h != height)) {
         pl_tex_destroy(p->gpu, &pl->tex);
-#endif
     }
 
-#if PL_API_VER < 229
-    // make texture for OSD
-    if (pl->plane.texture == NULL) {
-        pl->plane.texture = pl_tex_create(
-            p->gpu, &(struct pl_tex_params) {
-                .w = width, .h = height, .d = 0, .format = fmt, .sampleable = true, .host_writable = true,
-                .blit_dst = true,
-#if PL_API_VER < 159
-                .sample_mode = PL_TEX_SAMPLE_LINEAR, .address_mode = PL_TEX_ADDRESS_CLAMP,
-#endif
-            });
-    }
-    // make overlay
-    pl_tex_clear(p->gpu, pl->plane.texture, (float[4]){0});
-    pl->plane.components = 4;
-    pl->plane.shift_x = 0.0f;
-    pl->plane.shift_y = 0.0f;
-    pl->plane.component_mapping[0] = PL_CHANNEL_R;
-    pl->plane.component_mapping[1] = PL_CHANNEL_G;
-    pl->plane.component_mapping[2] = PL_CHANNEL_B;
-    pl->plane.component_mapping[3] = PL_CHANNEL_A;
-#else
  // make texture for OSD
     if (pl->tex == NULL) {
         pl->tex = pl_tex_create(
@@ -3187,20 +3077,12 @@ void make_osd_overlay(int x, int y, int width, int height) {
     part.src.y0 = 0.0f;
     part.src.x1 = width;
     part.src.y1 = height;
-#endif
     pl->mode = PL_OVERLAY_NORMAL;
     pl->repr.sys = PL_COLOR_SYSTEM_RGB;
     pl->repr.levels = PL_COLOR_LEVELS_PC;
     pl->repr.alpha = PL_ALPHA_INDEPENDENT;
 
     memcpy(&osdoverlay.color, &pl_color_space_srgb, sizeof(struct pl_color_space));
-#if PL_API_VER < 229
-    int offset = VideoWindowHeight - (VideoWindowHeight - height - y) - (VideoWindowHeight - y);
-    pl->rect.x0 = x;
-    pl->rect.y0 = VideoWindowHeight - y + offset; // Boden von oben
-    pl->rect.x1 = x + width;
-    pl->rect.y1 = VideoWindowHeight - height - y + offset;
-#else
     osdoverlay.parts = &part;
     osdoverlay.num_parts = 1;
     int offset = VideoWindowHeight - (VideoWindowHeight - height - y) - (VideoWindowHeight - y);
@@ -3208,7 +3090,6 @@ void make_osd_overlay(int x, int y, int width, int height) {
     part.dst.y0 = VideoWindowHeight - y + offset; // Boden von oben
     part.dst.x1 = x + width;
     part.dst.y1 = VideoWindowHeight - height - y + offset;
-#endif
 }
 #endif
 ///
@@ -3315,25 +3196,20 @@ static void CuvidDisplayFrame(void) {
             }
             continue;
         }
-        
+
 #ifdef PLACEBO
         //pthread_mutex_lock(&OSDMutex);
         if (OsdShown == 1) { // New OSD opened
-            
+
             make_osd_overlay(OSDx, OSDy, OSDxsize, OSDysize);
             if (posd) {
                 pl_tex_upload(p->gpu, &(struct pl_tex_transfer_params){
                                           // upload OSD
-#if PL_API_VER >= 229
                                           .tex = osdoverlay.tex,
-#else
-                                          .tex = osdoverlay.plane.texture,
-#endif
                                           .ptr = posd,
                                       });
             }
             OsdShown = 2;
-            
         }
 
         if (OsdShown == 2) {
@@ -4502,19 +4378,15 @@ void InitPlacebo() {
                                                          .surface = p->pSurface,
                                                          .present_mode = VK_PRESENT_MODE_FIFO_KHR,
                                                          .swapchain_depth = SWAP_BUFFER_SIZE,
-#if PL_API_VER < 229
-                                                         .prefer_hdr = true,
-#endif
                                                      });
 
     if (!p->swapchain) {
         Fatal(_("Failed creating vulkan swapchain!"));
     }
- 
+
     p->has_dma_buf = 0;
     Debug(3, "No support for dma_buf import \n");
 
-#if PL_API_VER >= 113
     // load LUT File
     struct file lutf;
     char tmp[400];
@@ -4527,7 +4399,6 @@ void InitPlacebo() {
     } else {
         Debug(3, "Placebo: No LUT File used\n");
     }
-#endif
     // create renderer
     p->renderer = pl_renderer_create(p->ctx, p->gpu);
     if (!p->renderer) {
@@ -4574,13 +4445,8 @@ void exit_display() {
         return;
     }
     pl_gpu_finish(p->gpu);
-#if PL_API_VER >= 229
     if (osdoverlay.tex)
         pl_tex_destroy(p->gpu, &osdoverlay.tex);
-#else
-    if (osdoverlay.plane.texture)
-        pl_tex_destroy(p->gpu, &osdoverlay.plane.texture);
-#endif
 
     //	 pl_renderer_destroy(&p->renderer);
     if (p->renderertest) {
@@ -4595,9 +4461,7 @@ void exit_display() {
     pl_vk_inst_destroy(&p->vk_inst);
 
     pl_log_destroy(&p->ctx);
-#if PL_API_VER >= 113
     pl_lut_free(&p->lut);
-#endif
     free(p);
     p = NULL;
 #endif
